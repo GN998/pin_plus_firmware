@@ -1,0 +1,50 @@
+name: Build Dev Firmware
+
+on:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      - name: Install Apache Ant
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ant
+
+      - name: Build Firmware with Ant
+        env:
+          # Point to the JavaCard SDK directory in your repository, ensuring that the variable names match those in the build.xml file.
+          JC_HOME: ${{ github.workspace }}/jc304_kit
+        run: |
+          # Grant executable permissions to prevent errors when executing batch/binary files in Linux.
+          chmod +x jc304_kit/bin/* || true
+          
+          # Execute Ant compilation
+          ant
+          
+          # Debugging information: Locate and print the paths to all generated .cap files.
+          echo "========================================"
+          echo "Generated CAP files location:"
+          find . -name "*.cap"
+          echo "========================================"
+
+      - name: Upload CAP file artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PIN-Plus-Firmware-Dev
+          # Use global wildcards to capture .cap files at any depth within the workspace.
+          path: "**/*.cap"
