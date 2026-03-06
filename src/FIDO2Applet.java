@@ -360,6 +360,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      * Same, but for managed buffers
      */
     private BufferManager bufferManager;
+    private final CBORReader cborReader;
 
     /**
      * Resident Keys
@@ -544,7 +545,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
      * @param buffer Byte buffer containing input request
      */
     private void makeCredential(APDU apdu, short lc, byte[] buffer) {
-        short readIdx = 1;
+        short readIdx;
 
         if (lc == 0) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
@@ -554,33 +555,34 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             resetRequested = false;
         }
 
-        final short numParameters = getMapEntryCount(apdu, buffer[readIdx++]);
+        short cborStatus = cborReader.init(buffer, (short) 1, (short) (lc - 1));
+        if (cborStatus != CBORReader.OK) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+        }
+
+        final short numParameters = cborReader.readMapHeader();
         if (numParameters < 4) { // There's no valid makeCredential call with fewer than four params
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
         }
 
-        if (buffer[readIdx++] != 0x01) { // clientDataHash
+        short key = cborReader.readNextKey();
+        if (key != 0x01) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
         }
 
-        if (buffer[readIdx++] == 0x58) {
-            // one-byte length, then bytestr
-            if (buffer[readIdx++] != CLIENT_DATA_HASH_LEN) {
-                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
-            }
-        } else {
+        final short clientDataHashIdx = TransientScratch.getClientDataHashOffset();
+        final byte[] clientDataHashBuffer = TransientScratch.getBuffer();
+        final short clientDataHashLen = cborReader.readBytes(clientDataHashBuffer, clientDataHashIdx);
+        if (clientDataHashLen != CLIENT_DATA_HASH_LEN) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
         }
 
-        short clientDataHashIdx = readIdx;
-        readIdx += CLIENT_DATA_HASH_LEN; // we checked above this is indeed the length of the client data hash
-        if (readIdx >= lc) {
-            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
-        }
-
-        if (buffer[readIdx++] != 0x02) { // rp
+        key = cborReader.readNextKey();
+        if (key != 0x02) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
         }
+
+        readIdx = cborReader.getCursor();
         if (readIdx >= lc) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
         }
@@ -588,10 +590,15 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         readIdx = consumeMapAndGetID(apdu, buffer, readIdx, lc, false, false, true, false);
         final short rpIdIdx = transientStorage.getStoredIdx();
         short rpIdLen = transientStorage.getStoredLen();
+        if (cborReader.skipValue() != CBORReader.OK || cborReader.getCursor() != readIdx) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+        }
 
-        if (buffer[readIdx++] != 0x03) { // user
+        key = cborReader.readNextKey();
+        if (key != 0x03) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
         }
+        readIdx = cborReader.getCursor();
         if (readIdx >= lc) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
         }
@@ -606,10 +613,15 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         consumeMapAndGetID(apdu, buffer, userMapIdx, lc, false, false, true, true);
         final short userNameIdx = transientStorage.getStoredIdx();
         final byte userNameLen = transientStorage.getStoredLen();
+        if (cborReader.skipValue() != CBORReader.OK || cborReader.getCursor() != readIdx) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+        }
 
-        if (buffer[readIdx++] != 0x04) { // pubKeyCredParams
+        key = cborReader.readNextKey();
+        if (key != 0x04) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
         }
+        readIdx = cborReader.getCursor();
         if (readIdx >= lc) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
         }
@@ -637,6 +649,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         if (!foundES256) {
             sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_UNSUPPORTED_ALGORITHM);
         }
+        if (cborReader.skipValue() != CBORReader.OK || cborReader.getCursor() != readIdx) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+        }
 
         boolean hmacSecretEnabled = false;
         boolean uvmRequested = false;
@@ -657,16 +672,22 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         // Consume any remaining parameters
         byte lastMapKey = 0x04;
         for (short i = 4; i < numParameters; i++) {
+            key = cborReader.readNextKey();
+            if (key < (short) 0) {
+                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
+            }
+            if ((short) lastMapKey >= key) {
+                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+            }
+            lastMapKey = (byte) key;
+
+            readIdx = cborReader.getCursor();
             if (readIdx >= lc) {
                 sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_MISSING_PARAMETER);
             }
-            if (buffer[readIdx] <= lastMapKey) {
-                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
-            }
-            lastMapKey = buffer[readIdx];
 
             short excludeListTypeVal, numExtensions, sLen, j;
-            switch (buffer[readIdx++]) {
+            switch ((byte) key) {
                 case 0x05: // excludeList
                     excludeListTypeVal = ub(buffer[readIdx]);
                     if (!(excludeListTypeVal >= 0x0080 && excludeListTypeVal <= 0x0097)) {
@@ -764,36 +785,47 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                             }
                         }
                     }
-                    continue;
+                    break;
                 case 0x07: // options
                     readIdx = processOptionsMap(apdu, buffer, readIdx, lc, true, true);
-                    continue;
+                    break;
                 case 0x08: // pinAuth
                     // Read past this, because we need the pinProtocol option first
                     pinAuthIdx = readIdx;
                     break;
                 case 0x09: // pinProtocol
-                    pinProtocol = buffer[readIdx++];
+                    pinProtocol = buffer[readIdx];
                     checkPinProtocolSupported(apdu, pinProtocol);
-                    continue;
+                    break;
                 case 0x0A: // enterpriseAttestation
                     // When "disabled", reject the parameter; when "enabled", ignore it
                     if (!enterpriseAttestation) {
                         sendErrorByte(apdu, FIDOConstants.CTAP1_ERR_INVALID_PARAMETER);
                     }
-                    byte val = buffer[readIdx++];
+                    byte val = buffer[readIdx];
                     if (val != 0x01 && val != 0x02) {
                         sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_OPTION);
                     }
                     break;
                 default:
-                    break;
+                    if (cborReader.skipValue() != CBORReader.OK) {
+                        sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+                    }
+                    continue;
             }
 
             if (readIdx >= lc) {
                 sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
             }
-            readIdx = consumeAnyEntity(apdu, buffer, readIdx, lc);
+            short expectedReadIdx = consumeAnyEntity(apdu, buffer, readIdx, lc);
+            if (cborReader.skipValue() != CBORReader.OK || cborReader.getCursor() != expectedReadIdx) {
+                sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
+            }
+            readIdx = expectedReadIdx;
+        }
+
+        if (cborReader.readNextKey() != CBORReader.ERR_DONE) {
+            sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_INVALID_CBOR);
         }
 
         if (!transientStorage.hasRKOption()) {
@@ -846,7 +878,6 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
         loadWrappingKeyIfNoPIN();
 
-        final short scratchRPIDHashHandle = bufferManager.allocate(apdu, RP_HASH_LEN, BufferManager.ANYWHERE);
         final short scratchRPIDHashOffset = TransientScratch.getRpHashOffset();
         final byte[] scratchRPIDHashBuffer = TransientScratch.getBuffer();
         sha256.doFinal(buffer, rpIdIdx, rpIdLen, scratchRPIDHashBuffer, scratchRPIDHashOffset);
@@ -1093,9 +1124,6 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
 
         // OKAY! time to start actually making the credential and sending a response!
         final short clientDataHashScratchOffset = TransientScratch.getClientDataHashOffset();
-        final byte[] clientDataHashBuffer = TransientScratch.getBuffer();
-        Util.arrayCopyNonAtomic(buffer, clientDataHashIdx,
-                clientDataHashBuffer, clientDataHashScratchOffset, CLIENT_DATA_HASH_LEN);
 
         // Everything we need is out of the input
         // We're now okay to use the whole bufferMem space to build and send our reply
@@ -6933,6 +6961,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         TransientScratch.initializeAtInstall();
+        cborReader = new CBORReader();
 
         alwaysUv = FORCE_ALWAYS_UV;
 
