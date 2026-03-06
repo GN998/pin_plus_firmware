@@ -847,8 +847,8 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         loadWrappingKeyIfNoPIN();
 
         final short scratchRPIDHashHandle = bufferManager.allocate(apdu, RP_HASH_LEN, BufferManager.ANYWHERE);
-        final short scratchRPIDHashOffset = bufferManager.getOffsetForHandle(scratchRPIDHashHandle);
-        final byte[] scratchRPIDHashBuffer = bufferManager.getBufferForHandle(apdu, scratchRPIDHashHandle);
+        final short scratchRPIDHashOffset = TransientScratch.getRpHashOffset();
+        final byte[] scratchRPIDHashBuffer = TransientScratch.getBuffer();
         sha256.doFinal(buffer, rpIdIdx, rpIdLen, scratchRPIDHashBuffer, scratchRPIDHashOffset);
 
         if (pinAuthSuccess) {
@@ -1092,9 +1092,8 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         // OKAY! time to start actually making the credential and sending a response!
-        final short clientDataHashHandle = bufferManager.allocate(apdu, CLIENT_DATA_HASH_LEN, BufferManager.ANYWHERE);
-        final short clientDataHashScratchOffset = bufferManager.getOffsetForHandle(clientDataHashHandle);
-        final byte[] clientDataHashBuffer = bufferManager.getBufferForHandle(apdu, clientDataHashHandle);
+        final short clientDataHashScratchOffset = TransientScratch.getClientDataHashOffset();
+        final byte[] clientDataHashBuffer = TransientScratch.getBuffer();
         Util.arrayCopyNonAtomic(buffer, clientDataHashIdx,
                 clientDataHashBuffer, clientDataHashScratchOffset, CLIENT_DATA_HASH_LEN);
 
@@ -1874,21 +1873,19 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         // These allocations might need to persist until next time, when we get a GetNextAssertion call
         // If we ARE a getNextAssertion call, we're just re-getting their indices into existing storage...
         final byte startingAllowedMemory = BufferManager.NOT_APDU_BUFFER;
-        short scratchRPIDHashHandle = bufferManager.allocate(apdu, RP_HASH_LEN, startingAllowedMemory);
-        byte[] scratchRPIDHashBuffer = bufferManager.getBufferForHandle(apdu, scratchRPIDHashHandle);
-        short scratchRPIDHashIdx = bufferManager.getOffsetForHandle(scratchRPIDHashHandle);
-        short clientDataHashHandle = bufferManager.allocate(apdu, CLIENT_DATA_HASH_LEN, startingAllowedMemory);
-        byte[] clientDataHashBuffer = bufferManager.getBufferForHandle(apdu, clientDataHashHandle);
-        short clientDataHashIdx = bufferManager.getOffsetForHandle(clientDataHashHandle);
+        byte[] assertionScratchBuffer = TransientScratch.getBuffer();
+        byte[] scratchRPIDHashBuffer = assertionScratchBuffer;
+        short scratchRPIDHashIdx = TransientScratch.getRpHashOffset();
+        byte[] clientDataHashBuffer = assertionScratchBuffer;
+        short clientDataHashIdx = TransientScratch.getClientDataHashOffset();
         // first byte, PIN protocol. Second byte a bitfield:
         // 1 for PIN auth success, 2 for credBlob requested, 3 for LBK requested, 4 for UVM requested
         short stateKeepingHandle = bufferManager.allocate(apdu, (short) 2, startingAllowedMemory);
         byte[] stateKeepingBuffer = bufferManager.getBufferForHandle(apdu, stateKeepingHandle);
         short stateKeepingIdx = bufferManager.getOffsetForHandle(stateKeepingHandle);
         // first byte length, remaining bytes HMAC salt
-        short hmacSaltHandle = bufferManager.allocate(apdu, (short) 65, startingAllowedMemory);
-        byte[] hmacSaltBuffer = bufferManager.getBufferForHandle(apdu, hmacSaltHandle);
-        short hmacSaltIdx = bufferManager.getOffsetForHandle(hmacSaltHandle);
+        byte[] hmacSaltBuffer = assertionScratchBuffer;
+        short hmacSaltIdx = TransientScratch.getHmacSaltOffset();
 
         final short credStorageHandle = bufferManager.allocate(apdu, CREDENTIAL_ID_LEN, startingAllowedMemory);
         final short credStorageOffset = bufferManager.getOffsetForHandle(credStorageHandle);
@@ -3003,7 +3000,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         final boolean isExtendedAPDU = apdu.getOffsetCdata() == ISO7816.OFFSET_EXT_CDATA;
         final short expectedLen = apdu.setOutgoing();
         short apduBlockSize = (short)256;
-		if((byte)0x00 == (byte)(apdu.getProtocol()&0xF0))
+		if((byte)0x00 == (byte)(APDU.getProtocol()&0xF0))
 		{
 			apduBlockSize = (short)255;
 		}
@@ -4161,15 +4158,13 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         short readOffset = 0;
         bufferManager.initializeAPDU(apdu);
 
-        final short scratchClientDataHashHandle = bufferManager.allocate(apdu, CLIENT_DATA_HASH_LEN, BufferManager.NOT_APDU_BUFFER);
-        final short scratchClientDataHashOffset = bufferManager.getOffsetForHandle(scratchClientDataHashHandle);
-        final byte[] scratchClientDataHashBuffer = bufferManager.getBufferForHandle(apdu, scratchClientDataHashHandle);
-        final short scratchRPIDHashHandle = bufferManager.allocate(apdu, RP_HASH_LEN, BufferManager.NOT_APDU_BUFFER);
-        final short scratchRPIDHashOffset = bufferManager.getOffsetForHandle(scratchRPIDHashHandle);
-        final byte[] scratchRPIDHashBuffer = bufferManager.getBufferForHandle(apdu, scratchRPIDHashHandle);
-        final short publicKeyHandle = bufferManager.allocate(apdu, PUB_KEY_LENGTH, BufferManager.NOT_APDU_BUFFER);
-        final short publicKeyOffset = bufferManager.getOffsetForHandle(publicKeyHandle);
-        final byte[] publicKeyBuffer = bufferManager.getBufferForHandle(apdu, publicKeyHandle);
+        final byte[] transientScratchBuffer = TransientScratch.getBuffer();
+        final short scratchClientDataHashOffset = TransientScratch.getClientDataHashOffset();
+        final byte[] scratchClientDataHashBuffer = transientScratchBuffer;
+        final short scratchRPIDHashOffset = TransientScratch.getRpHashOffset();
+        final byte[] scratchRPIDHashBuffer = transientScratchBuffer;
+        final short publicKeyOffset = TransientScratch.getPubKeyOffset();
+        final byte[] publicKeyBuffer = transientScratchBuffer;
         final short scratchCredHandle = bufferManager.allocate(apdu, CREDENTIAL_ID_LEN, BufferManager.NOT_APDU_BUFFER);
         final short scratchCredOffset = bufferManager.getOffsetForHandle(scratchCredHandle);
         final byte[] scratchCredBuffer = bufferManager.getBufferForHandle(apdu, scratchCredHandle);
@@ -4280,7 +4275,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         short chunkSize = (short)256;
-		if((byte)0x00 == (byte)(apdu.getProtocol()&0xF0))
+		if((byte)0x00 == (byte)(APDU.getProtocol()&0xF0))
 		{
 			chunkSize = (short)255;
 		}
@@ -6936,6 +6931,8 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                 }
             }
         }
+
+        TransientScratch.initialize();
 
         alwaysUv = FORCE_ALWAYS_UV;
 
