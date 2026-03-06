@@ -6932,7 +6932,7 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             }
         }
 
-        TransientScratch.initialize();
+        TransientScratch.initializeAtInstall();
 
         alwaysUv = FORCE_ALWAYS_UV;
 
