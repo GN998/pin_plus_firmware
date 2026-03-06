@@ -41,6 +41,7 @@ public final class CBORReader {
     private short decodedValue;
     private short decodedHeadLen;
     private boolean decodedIndefinite;
+    private short decodedAdditional;
 
     public CBORReader() {
     }
@@ -390,44 +391,47 @@ public final class CBORReader {
             return skipItem();
         }
 
-        if (major == MAJOR_SIMPLE) {
-            if (decodedIndefinite) {
-                return ERR_INVALID;
-            }
-            if (decodedValue <= (short) 23) {
-                cursor = headEnd;
-                return OK;
-            }
-            if (decodedValue == (short) 24) {
-                if (!canAdd(headEnd, (short) 1, end)) {
-                    return ERR_BOUNDS;
-                }
-                cursor = (short) (headEnd + 1);
-                return OK;
-            }
-            if (decodedValue == (short) 25) {
-                if (!canAdd(headEnd, (short) 2, end)) {
-                    return ERR_BOUNDS;
-                }
-                cursor = (short) (headEnd + 2);
-                return OK;
-            }
-            if (decodedValue == (short) 26) {
-                if (!canAdd(headEnd, (short) 4, end)) {
-                    return ERR_BOUNDS;
-                }
-                cursor = (short) (headEnd + 4);
-                return OK;
-            }
-            if (decodedValue == (short) 27) {
-                if (!canAdd(headEnd, (short) 8, end)) {
-                    return ERR_BOUNDS;
-                }
-                cursor = (short) (headEnd + 8);
-                return OK;
-            }
-            return ERR_INVALID;
+if (major == MAJOR_SIMPLE) {
+    if (decodedIndefinite) {
+        return ERR_INVALID;
+    }
+
+    if (decodedAdditional <= (short) 23) {
+        cursor = headEnd;
+        return OK;
+    }
+
+    if (decodedAdditional == (short) 24) {
+        cursor = headEnd;
+        return OK;
+    }
+
+    if (decodedAdditional == (short) 25) {
+        if (!canAdd(headEnd, (short) 2, end)) {
+            return ERR_BOUNDS;
         }
+        cursor = (short) (headEnd + 2);
+        return OK;
+    }
+
+    if (decodedAdditional == (short) 26) {
+        if (!canAdd(headEnd, (short) 4, end)) {
+            return ERR_BOUNDS;
+        }
+        cursor = (short) (headEnd + 4);
+        return OK;
+    }
+
+    if (decodedAdditional == (short) 27) {
+        if (!canAdd(headEnd, (short) 8, end)) {
+            return ERR_BOUNDS;
+        }
+        cursor = (short) (headEnd + 8);
+        return OK;
+    }
+
+    return ERR_INVALID;
+}
 
         return ERR_INVALID;
     }
@@ -442,6 +446,7 @@ public final class CBORReader {
 
         decodedIndefinite = false;
         decodedValue = (short) 0;
+        decodedAdditional = ai;
 
         if (ai <= (short) 23) {
             decodedHeadLen = (short) 1;
@@ -458,25 +463,25 @@ public final class CBORReader {
             return OK;
         }
 
-        if (ai == (short) 25) {
-            if (major == MAJOR_SIMPLE) {
-                decodedHeadLen = (short) 1;
-                decodedValue = ai;
-                return OK;
-            }
-            if (!canAdd(at, (short) 3, limit)) {
-                return ERR_BOUNDS;
-            }
-            decodedHeadLen = (short) 3;
-            if (buffer[(short) (at + 1)] < (byte) 0) {
-                return ERR_RANGE;
-            }
-            decodedValue = Util.getShort(buffer, (short) (at + 1));
-            if (decodedValue < (short) 0) {
-                return ERR_RANGE;
-            }
-            return OK;
-        }
+if (ai == (short) 25) {
+    if (major == MAJOR_SIMPLE) {
+        decodedHeadLen = (short) 1;
+        decodedValue = (short) 0;
+        return OK;
+    }
+    if (!canAdd(at, (short) 3, limit)) {
+        return ERR_BOUNDS;
+    }
+    decodedHeadLen = (short) 3;
+    if (buffer[(short) (at + 1)] < (byte) 0) {
+        return ERR_RANGE;
+    }
+    decodedValue = Util.getShort(buffer, (short) (at + 1));
+    if (decodedValue < (short) 0) {
+        return ERR_RANGE;
+    }
+    return OK;
+}
 
         if (ai == (short) 31) {
             decodedHeadLen = (short) 1;
