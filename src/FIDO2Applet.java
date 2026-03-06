@@ -785,10 +785,10 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                             }
                         }
                     }
-                    break;
+                    continue;
                 case 0x07: // options
                     readIdx = processOptionsMap(apdu, buffer, readIdx, lc, true, true);
-                    break;
+                    continue;
                 case 0x08: // pinAuth
                     // Read past this, because we need the pinProtocol option first
                     pinAuthIdx = readIdx;
@@ -851,7 +851,8 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
             // Come back and verify PIN auth
             byte pinPermissions = transientStorage.getPinPermissions();
 
-            verifyPinAuth(apdu, buffer, pinAuthIdx, buffer, clientDataHashIdx, pinProtocol);
+            verifyPinAuth(apdu, buffer, pinAuthIdx,
+                    clientDataHashBuffer, clientDataHashIdx, pinProtocol);
 
             if ((pinPermissions & FIDOConstants.PERM_MAKE_CREDENTIAL) == 0) {
                 // PIN token doesn't have permission for the MC operation
