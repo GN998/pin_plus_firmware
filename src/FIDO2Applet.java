@@ -1074,6 +1074,12 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
 
                 ok = true;
             } catch (Exception e) {
+                if (JCSystem.isObjectDeletionSupported()) {
+                    try {
+                    JCSystem.requestObjectDeletion();
+                } catch (Exception ignore) {
+                }
+            }
                 sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_KEY_STORE_FULL);
             } finally {
                 if (ok) {
@@ -2121,11 +2127,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
                     sendErrorByte(apdu, FIDOConstants.CTAP2_ERR_PIN_AUTH_INVALID);
                 }
 
-				/* 
-                if (WRITES_INVALIDATE_PINS) {
+                /*if (WRITES_INVALIDATE_PINS) {
                     transientStorage.setPinProtocolInUse((byte) 3, (byte) 0);
-                }
-				*/
+                }*/
 
                 stateKeepingBuffer[(short)(stateKeepingIdx + 1)] |= 0x01;
             }
@@ -5040,6 +5044,11 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         }
 
         // If we got here, we might not have found a matching credential. That's okay.
+        if ((numResidentCredentials & 0x03) == 0) {
+            if (JCSystem.isObjectDeletionSupported()) {
+                JCSystem.requestObjectDeletion();
+                }
+        }
         outBuf[0] = FIDOConstants.CTAP2_OK;
         sendNoCopy(apdu, (short) 1);
     }
@@ -5526,6 +5535,9 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
         } finally {
             if (ok) {
                 JCSystem.commitTransaction();
+                if (JCSystem.isObjectDeletionSupported()) {
+                    JCSystem.requestObjectDeletion();
+                }
                 sendErrorByte(apdu, FIDOConstants.CTAP2_OK);
             } else {
                 JCSystem.abortTransaction();
@@ -7358,5 +7370,4 @@ public final class FIDO2Applet extends Applet implements ExtendedLength {
     }
 
 }
-
 
