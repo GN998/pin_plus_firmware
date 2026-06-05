@@ -1,0 +1,68 @@
+name: Build Dev Firmware
+
+on:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # 1. Checkout repository and enable submodule support
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive 
+
+      # 2. Set up Java environment to JDK 8
+      - name: Set up JDK 8
+        uses: actions/setup-java@v5
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      # 3. Install Ant, download the ant-javacard plugin, and dynamically clone the JavaCard SDKs
+      - name: Install Dependencies and SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ant
+          
+          # Automatically download the latest ant-javacard plugin
+          wget -O ant-javacard.jar https://github.com/martinpaljak/ant-javacard/releases/latest/download/ant-javacard.jar
+          
+          # Shallow clone the JavaCard SDK collection repository
+          git clone --depth 1 https://github.com/martinpaljak/oracle_javacard_sdks.git
+
+      # 4. Execute the build process using Ant
+      - name: Build Firmware with Ant
+        env:
+          # Point the environment variable to the newly cloned jc304_kit directory
+          JC_HOME: ${{ github.workspace }}/oracle_javacard_sdks/jc304_kit
+        run: |
+          # Safely grant execution permissions to the SDK binaries
+          if [ -d "oracle_javacard_sdks/jc304_kit/bin" ]; then
+            chmod +x oracle_javacard_sdks/jc304_kit/bin/* || true
+            echo "Successfully granted execution permissions to SDK."
+          else
+            echo "WARNING: SDK directory not found!"
+          fi
+          
+          # Execute Ant compilation
+          ant
+          
+          # Debugging information to locate the generated CAP file
+          echo "========================================"
+          echo "Generated CAP files location:"
+          find . -name "*.cap"
+          echo "========================================"
+
+      # 5. Upload the compiled .cap files so they can be downloaded after the workflow finishes
+      - name: Upload CAP file artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: PIN-Plus-Firmware-Dev
+          path: "**/*.cap"
+          if-no-files-found: error

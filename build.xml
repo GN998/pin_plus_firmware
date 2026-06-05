@@ -1,0 +1,13 @@
+<project name="PIN_Plus_FIDO2" default="build" basedir=".">
+    <property environment="env"/>
+    
+    <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ant-javacard.jar"/>
+
+    <target name="build">
+        <javacard jckit="${env.JC_HOME}">
+            <cap aid="A0000006472F00" output="pin_plus_fido2.cap" sources="src">
+                <applet class="ch.token2.fido2.FIDO2Applet" aid="A0000006472F0001"/>
+            </cap>
+        </javacard>
+    </target>
+</project>
